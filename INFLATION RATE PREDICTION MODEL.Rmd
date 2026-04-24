@@ -1,0 +1,285 @@
+---
+title: '"Determinants and Forecasting of Inflation in Kenya (2000–2024)"'
+author: '"Komen Kipkoros Meshack"'
+date: "2026-04-24"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+library(readxl)
+library(dplyr)
+library(ggplot2)
+library(forecast)
+setwd("C:/Users/MESHACK/Desktop")
+kenya <- kenya_raw %>%
+  rename(
+    year            = year,
+    cpi             = `CPI yearly`,
+    infl_rate       = `Annual inflation rate %`,
+    gdp_growth      = `Real GDP growth rate`,
+    exch_change     = `Exchange rate change`,
+    money_growth    = `Money growth`,
+    gov_expend_rate = `Government expenditure rate`
+  ) %>%
+  arrange(year)
+
+str(kenya)
+summary(kenya)
+
+
+1.0 Creating lagged variables and event dummies
+
+To capture dynamic effects, I created lagged variables for inflation and key determinants. I also defined dummy variables for major event years:
+
+2008: Post-election violence and global food/fuel price spike.
+2020: COVID‑19 shock.
+(2000 was initially considered, but turns out to be collinear in the lagged model; I keep it for discussion only.)
+kenya <- kenya %>%
+  arrange(year) %>%
+  mutate(
+    infl_lag1          = lag(infl_rate, 1),
+    gdp_growth_lag1    = lag(gdp_growth, 1),
+    exch_change_lag1   = lag(exch_change, 1),
+    money_growth_lag1  = lag(money_growth, 1),
+    gov_expend_lag1    = lag(gov_expend_rate, 1),
+    gdp_growth_lag1    = lag(gdp_growth, 1),
+    D2000              = ifelse(year == 2000, 1, 0),
+    D2008              = ifelse(year == 2008, 1, 0),
+    D2020              = ifelse(year == 2020, 1, 0)
+  )
+
+summary(kenya)
+2.0 Descriptive Analysis
+3.0 Inflation and CPI trends
+
+ggplot(kenya, aes(x = year, y = infl_rate)) +
+  geom_line(color = "steelblue") +
+  geom_point(color = "steelblue") +
+  labs(
+    title = "Kenya – Annual Inflation Rate (2000–2024)",
+    x = "Year",
+    y = "Inflation (%)"
+  ) +
+  theme_minimal()
+ggplot(kenya, aes(x = year, y = cpi)) +
+  geom_line(color = "darkred") +
+  geom_point(color = "darkred") +
+  labs(
+    title = "Kenya – CPI Index (2000–2024)",
+    x = "Year",
+    y = "CPI (Index)"
+  ) +
+  theme_minimal()
+The plots show periods of relatively high inflation as well as more stable years. Notably, 2008 stands out as a high-inflation year, with other spikes and troughs corresponding to domestic and global events.
+
+3.1 Key macro variables over time
+
+kenya_long <- kenya %>%
+  select(year, gdp_growth, exch_change, money_growth, gov_expend_rate) %>%
+  pivot_longer(
+    cols = -year,
+    names_to = "variable",
+    values_to = "value"
+  )
+
+ggplot(kenya_long, aes(x = year, y = value, color = variable)) +
+  geom_line() +
+  geom_point() +
+  facet_wrap(~ variable, scales = "free_y") +
+  labs(
+    title = "Key Macroeconomic Variables – Kenya (2000–2024)",
+    x = "Year",
+    y = "Percent or change"
+  ) +
+  theme_minimal() +
+  theme(legend.position = "none")
+These series highlight variation in real GDP growth, exchange-rate movements, money growth, and government expenditure over the sample period.Between 2006 and 2007, 2013 to 2015, there was large increase in government expenditure however 2012 and 2013 had a decrease in govt expenditure.
+Between 2014 and 2016, 2023 and 2024 there has been a decrease in broad money growth;
+Between 2007 and 2008,2019 and 2020 there is a very large decrease in GDP growth 
+Between 2011 and 2012, 2023 and 2024 there has been a drop in exchange rates but between 2007 and 2009, a great increase in exchange rates.
+
+
+3.2 Correlation overview
+vars_for_corr <- kenya %>%
+  select(infl_rate, gdp_growth, money_growth, exch_change, gov_expend_rate) %>%
+  na.omit()
+
+ggcorr(vars_for_corr,
+       label = TRUE,
+       hjust = 1,
+       size = 3,
+       label_round = 2,
+       nbreaks = 5) +
+  ggtitle("Correlation Matrix – Kenya Macroeconomic Variables")
+The correlation matrix provides a compact view of linear relationships between inflation, growth, money, exchange-rate changes and government expenditure.I found out that Inflation rate is negatively related to Gdp growth and exchange rate; however it relates positively to others.
+
+4.0 Determinants of Inflation: Regression Analysis
+4.1 Baseline lagged explanatory model
+I modelled current inflation as a function of lagged inflation, lagged money growth, and lagged exchange-rate changes:
+
+model_lag <- lm(
+  infl_rate ~ infl_lag1 + money_growth_lag1 + exch_change_lag1,
+  data = kenya
+)
+
+summary(model_lag)
+Interpretation (baseline model):
+
+The overall model is statistically significant (F-test p-value around 0.016), with an adjusted R-squared of about 0.30.
+The coefficient on lagged money growth is positive and borderline significant, suggesting that higher money growth last year is associated with higher inflation this year.
+The coefficient on lagged exchange-rate change is large(-45.18) in magnitude and statistically significant, indicating that exchange-rate movements in the previous year are an important driver of current inflation. Given the definition of exch_change that a positive exchange rate means shilling is becoming stronger, this typically implies that depreciation tends to raise inflation.
+The coefficient on lagged inflation is small and not significant once money and exchange rate are included, pointing to limited additional persistence beyond these variables.
+
+4.2 Model with structural event dummies
+To capture major shocks, i included dummies for 2008 (post-election violence and global commodity spike) and 2020 (COVID‑19). Due to collinearity, i did not keep a separate 2000 dummy in the final model.
+
+model_final <- lm(
+  infl_rate ~ infl_lag1 + money_growth_lag1 + exch_change_lag1 + D2008 + D2020,
+  data = kenya
+)
+
+summary(model_final)
+Key results from the final model:
+
+The adjusted R-squared rises to about 0.63, indicating that around 63% of the variation in inflation is explained.
+The 2008 dummy is large and highly significant. Inflation in 2008 is about 15 percentage points higher than what would be predicted by the lagged variables alone, confirming a major positive inflation shock in that year.
+The 2020 dummy is not statistically significant, suggesting that, once monetary and exchange-rate conditions are taken into account, the COVID‑19 shock did not create an unusually large deviation in annual inflation.
+The coefficient on lagged exchange-rate change remains significant (or borderline) and economically important, confirming that exchange-rate movements are a key determinant of inflation.
+The effect of lagged money growth is positive but weaker in statistical terms after controlling for the 2008 shock.
+
+4.3 Formal comparison: with vs without event dummies
+model_lag_nobreak <- lm(
+  infl_rate ~ infl_lag1 + money_growth_lag1 + exch_change_lag1,
+  data = kenya
+)
+
+anova(model_lag_nobreak, model_final)
+A small p-value in this F-test indicates that adding the 2008 and 2020 dummies significantly improves the model, providing evidence of structural breaks, particularly around 2008.
+
+5.0 Structural Breaks and Event Years
+To visualise key events, we mark 2008 and 2020 on the inflation timeline:
+
+ggplot(kenya, aes(x = year, y = infl_rate)) +
+  geom_line(color = "steelblue") +
+  geom_point(color = "steelblue") +
+  geom_vline(xintercept = 2008, linetype = "dashed", color = "red") +
+  geom_vline(xintercept = 2020, linetype = "dashed", color = "red") +
+  annotate("text", x = 2008, y = max(kenya$infl_rate, na.rm = TRUE),
+           label = "2008 crisis", vjust = -0.5, color = "red", angle = 90) +
+  annotate("text", x = 2020, y = max(kenya$infl_rate, na.rm = TRUE),
+           label = "COVID-19", vjust = -0.5, color = "red", angle = 90) +
+  labs(
+    title = "Inflation in Kenya with Key Event Years Marked",
+    x = "Year",
+    y = "Inflation (%)"
+  ) +
+  theme_minimal()
+The regression results and this figure together show that 2008 represents a major upward break in inflation, while 2020 does not stand out as strongly in annual inflation once fundamentals are controlled for.
+
+6. Time-Series Forecasting of Inflation
+6.1 ARIMA model and train–test evaluation
+we treat annual inflation as a univariate time series and fit an ARIMA model using auto.arima.
+
+infl_ts <- ts(kenya$infl_rate, start = min(kenya$year), frequency = 1)
+
+# Train on 2000–2018, test on 2019–2024
+infl_train <- window(infl_ts, end = 2018)
+infl_test  <- window(infl_ts, start = 2019)
+
+fit_train <- auto.arima(infl_train)
+summary(fit_train)
+auto.arima selects an ARIMA(0,0,0) with non-zero mean, which is a constant-mean model. This implies that annual inflation behaves like white noise around a constant average, with no strong autoregressive or moving-average structure detected in the training data.
+
+h_test <- length(infl_test)
+fc_test <- forecast(fit_train, h = h_test)
+
+autoplot(fc_test) +
+  autolayer(infl_test, series = "Actual", color = "black") +
+  labs(
+    title = "ARIMA Forecast vs Actual Inflation (Test Period 2019–2024)",
+    x = "Year",
+    y = "Inflation (%)"
+  ) +
+  theme_minimal()
+accuracy(fc_test, infl_test)
+The test-set accuracy metrics (RMSE, MAE, etc.) show how well this simple model predicts inflation over 2019–2024. Given the volatility and annual frequency, forecast errors are non-trivial.
+
+6.2 One-year-ahead forecast
+We now refit the ARIMA model on the full 2000–2024 series and produce a one-year-ahead forecast.
+
+fit_full <- auto.arima(infl_ts)
+summary(fit_full)
+
+fc_1 <- forecast(fit_full, h = 1)
+fc_1
+The point forecast gives the predicted inflation rate for the next year (2025) in the data, and the prediction intervals indicate the range of likely outcomes. For this constant-mean ARIMA model, the forecast is approximately equal to the historical average inflation, with relatively wide intervals reflecting high volatility.
+
+We can visualise the one-year-ahead forecast:
+
+autoplot(fc_1) +
+  labs(
+    title = "One-Year-Ahead Forecast of Kenya's Inflation",
+    x = "Year",
+    y = "Inflation (%)"
+  ) +
+  theme_minimal()
+
+7. Optional Extension: Determinants of Real GDP Growth
+As an extension, we can also examine the determinants of real GDP growth using similar methods.
+
+model_gdp_lag <- lm(
+  gdp_growth ~ gdp_growth_lag1 + infl_rate_lag1 +
+    exch_change_lag1 + money_growth_lag1 + gov_expend_lag1,
+  data = kenya
+)
+
+summary(model_gdp_lag)
+
+
+8. Discussion and Limitations
+8.1 Discussion
+The analysis indicates that Kenya’s annual inflation is influenced by both macroeconomic fundamentals and discrete shocks:
+
+Fundamentals: Lagged money growth and lagged exchange-rate changes are key drivers of inflation. Higher money growth in the previous year tends to be associated with higher inflation in the current year, while exchange-rate depreciation (as reflected in the sign of exch_change_lag1) raises inflation through imported price pressures.
+Structural shocks: The 2008 dummy is large and highly significant. Even after controlling for lagged inflation, money growth and exchange-rate changes, inflation in 2008 was about 15 percentage points higher than predicted, confirming the impact of the post-election crisis and global commodity price spike. The 2020 dummy is not statistically significant, indicating that COVID‑19 did not produce an unusually large deviation in annual inflation once underlying macro conditions are taken into account.
+Persistence: Once money and exchange-rate movements are included, lagged inflation itself does not appear to add much explanatory power, suggesting that the apparent persistence of inflation is largely driven by these underlying variables.
+On the forecasting side, the chosen ARIMA model is a constant-mean process. This implies that, at the annual frequency and with the available data, past inflation alone provides limited structure for forecasting; the best predictor is close to the historical average with wide prediction intervals. This underscores the importance of incorporating broader macroeconomic information—and recognising volatility and uncertainty—when forming expectations about future inflation.
+
+8.2 Limitations
+Several limitations of this analysis should be noted:
+
+Short sample and annual frequency: With only 25 annual observations (2000–2024), statistical power is limited and parameter estimates can be sensitive to specification and outliers. Annual data also mask within-year dynamics that could be important.
+Limited variable set: While the model includes money growth, exchange-rate changes, GDP growth and government expenditure, it omits other potentially relevant factors such as global commodity prices, inflation expectations, interest-rate rules, and supply-side shocks.
+Simplified treatment of breaks: Structural breaks are captured by a small number of year dummies. This approach is useful for identifying major one-off shocks, but does not fully model gradual regime changes, evolving policy frameworks, or time-varying parameters.
+Univariate forecast model: The ARIMA model used for forecasting is purely univariate and does not incorporate projections of money growth, the exchange rate, or other macro variables. As a result, forecasts are intentionally conservative and centred on the historical mean.
+Data quality and measurement: The analysis assumes consistent and accurate measurement of CPI, inflation, money, GDP and government expenditure. Revisions, redefinitions or changes in methodology could affect the robustness of some results.
+Future work could extend this project by using higher-frequency data (monthly or quarterly), adding external variables such as global oil and food prices, exploring regime-switching or time-varying parameter models, and building multivariate forecasting systems that jointly model inflation and its determinants.
+
+9. Conclusion
+This project shows that exchange-rate movements and, to a lesser extent, money growth are central determinants of Kenya’s inflation, while major political and external shocks, particularly in 2008, create sharp one-off deviations from the normal inflation process. At the same time, purely univariate time-series approaches provide only limited forecastability at the annual horizon, and the best simple prediction is that inflation will remain near its historical average, with considerable uncertainty.
+
+The combination of explanatory regression analysis, structural break testing, and simple time-series forecasting demonstrates how relatively small macroeconomic datasets can still yield informative insights into a country’s inflation dynamics.
